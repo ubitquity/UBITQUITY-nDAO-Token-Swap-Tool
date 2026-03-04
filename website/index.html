@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>UBITQUITY + nDAO Token Swap Tool</title>
-<meta name="description" content="Atomic token swap tool powered by XPR Network. Swap UBQT, NDAO, TITLET, DEED and more with live Alcor Exchange pricing.">
+<meta name="description" content="Atomic token swap tool powered by XPR Network. Swap UBQT, NDAO, TITLET, DEED, ARCADE and more with live Alcor Exchange pricing.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <!-- Proton Web SDK (WebAuth wallet) — bundles to global window.ProtonWebSDK -->
@@ -430,6 +430,10 @@ button { font-family: var(--sans); }
 .price-xpr { font-size: 8px; color: var(--text-faint); font-family: var(--mono); }
 .price-na { font-size: 9px; color: rgba(107,114,128,0.5); }
 .price-loading { font-size: 10px; color: var(--text-faint); }
+.price-supply { font-size: 8px; color: var(--text-faint); margin-top: 1px; }
+.price-links { font-size: 8px; margin-top: 2px; white-space: nowrap; }
+.price-links a { color: var(--text-faint); text-decoration: none; }
+.price-links a:hover { color: var(--accent); }
 
 /* ═══════════════════════════════════════════════════════════
    DONATIONS
@@ -677,7 +681,7 @@ button { font-family: var(--sans); }
   <div class="price-grid-section fade-in-d3">
     <div class="price-grid-header">
       <div class="section-title" style="margin-bottom:0;">Live Prices — Alcor Exchange</div>
-      <div class="price-grid-api">proton.alcor.exchange/api/v2</div>
+      <div class="price-grid-api">proton.alcor.exchange/api/v2 · explorer.xprnetwork.org</div>
     </div>
     <div class="price-grid" id="priceGrid"></div>
   </div>
@@ -718,7 +722,7 @@ button { font-family: var(--sans); }
     MIT License · Open Source · v0.01 Alpha<br>
     © <span id="yearMain"></span> UBITQUITY, INC. &amp; nDAO · One Block at a Time®<br>
     <span class="ghost">USE AT YOUR OWN RISK — No warranty expressed or implied</span><br>
-    <span class="ghost">Prices via Alcor Exchange (proton.alcor.exchange/api/v2)</span>
+    <span class="ghost">Prices via Alcor Exchange (proton.alcor.exchange/api/v2) · Supply via XPR Network (explorer.xprnetwork.org)</span>
   </div>
 </div>
 
@@ -742,11 +746,13 @@ button { font-family: var(--sans); }
     { symbol: 'AETHERT', name: 'Aether Token',       contract: 'tokencreate',  alcorId: 'aethert-tokencreate', precision: 4, color: '#74B9FF', staticUsdPrice: 0.01 },
     { symbol: 'GAMES',   name: 'Games Token',        contract: 'tokencreate',  alcorId: 'games-tokencreate',   precision: 4, color: '#A29BFE', staticUsdPrice: 0.01 },
     { symbol: 'BEATS',   name: 'Beats Token',        contract: 'tokencreate',  alcorId: 'beats-tokencreate',   precision: 4, color: '#FD79A8', staticUsdPrice: 0.01 },
+    { symbol: 'ARCADE',  name: 'Arcade Token',        contract: 'tokencreate',  alcorId: 'arcade-tokencreate',  precision: 4, color: '#FF6B35', staticUsdPrice: 0.01 },
     { symbol: 'CAUDIT',  name: 'Crypto Audit Token', contract: 'tokencreate',  alcorId: 'caudit-tokencreate',  precision: 4, color: '#55EFC4', staticUsdPrice: 0.01 },
   ];
 
   const ALCOR_API = 'https://proton.alcor.exchange/api/v2/tokens';
   const ALCOR_XPR_ID = 'xpr-eosio.token'; // XPR/USD reference pair
+  const CHAIN_API = 'https://proton.eosusa.io'; // XPR Network chain RPC (explorer.xprnetwork.org data source)
   const SLIPPAGES = ['0.5', '1.0', '2.0', '5.0'];
 
   // ─── STATE ─────────────────────────────────────────────────
@@ -758,6 +764,7 @@ button { font-family: var(--sans); }
     wallet: null,
     status: 'idle', // idle | connecting | connected | swapping | success
     prices: {},
+    supply: {},         // token supply stats from XPR chain (explorer.xprnetwork.org)
     xprUsdRate: null,   // XPR/USD rate for system_price conversions
     pricesLoading: true,
     pricesLastUpdated: null,
@@ -840,7 +847,30 @@ button { font-family: var(--sans); }
       }
     });
 
-    await Promise.allSettled([xprFetch, ...tokenFetches]);
+    // Fetch supply stats from XPR chain (same data shown on explorer.xprnetwork.org)
+    const supplyFetches = TOKENS.map(async (token) => {
+      try {
+        const res = await fetch(`${CHAIN_API}/v1/chain/get_currency_stats`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: token.contract, symbol: token.symbol }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const info = data[token.symbol];
+        if (info) {
+          const supplyNum = parseFloat(info.supply);
+          const maxNum = parseFloat(info.max_supply);
+          state.supply[token.symbol] = {
+            supply: supplyNum,
+            max_supply: maxNum,
+            issuer: info.issuer,
+          };
+        }
+      } catch (_) {}
+    });
+
+    await Promise.allSettled([xprFetch, ...tokenFetches, ...supplyFetches]);
 
     // For tokens with system_price but no usd_price, derive USD via XPR rate
     if (state.xprUsdRate) {
@@ -1052,10 +1082,17 @@ button { font-family: var(--sans); }
         valueHtml = '<span class="price-na">No pair</span>';
       }
       const dotColor = (p && p.error) ? 'var(--text-faint)' : t.color;
+      const s = state.supply[t.symbol];
+      const supplyHtml = s
+        ? `<div class="price-supply">Supply: ${s.supply.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>`
+        : '';
+      const alcorUrl = `https://proton.alcor.exchange/analytics/tokens/${t.alcorId}`;
+      const explorerUrl = `https://explorer.xprnetwork.org/token/${t.contract}/${t.symbol}`;
+      const linksHtml = `<div class="price-links"><a href="${alcorUrl}" target="_blank" rel="noopener">Alcor</a> · <a href="${explorerUrl}" target="_blank" rel="noopener">Explorer</a></div>`;
       return `<div class="price-tile" style="border:1px solid ${t.color}15;">
         <div class="price-dot" style="background:${dotColor};"></div>
-        <div class="price-info"><div class="price-symbol">${t.symbol}</div><div class="price-contract">${t.contract}</div></div>
-        <div class="price-values">${valueHtml}</div>
+        <div class="price-info"><div class="price-symbol">${t.symbol}</div><div class="price-contract">${t.contract}</div>${supplyHtml}</div>
+        <div class="price-values">${valueHtml}${linksHtml}</div>
       </div>`;
     }).join('');
   }
