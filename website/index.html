@@ -695,9 +695,9 @@ button { font-family: var(--sans); }
         </div>
         <div class="donate-info">
           <div class="donate-label">WebAuth (XPR Network)</div>
-          <div class="donate-value">@nwosnack2</div>
+          <div class="donate-value">@nftitledao</div>
         </div>
-        <button class="btn-copy-addr" onclick="navigator.clipboard.writeText('nwosnack2').then(function(){var b=event.target;b.textContent='Copied!';setTimeout(function(){b.textContent='Copy'},1500)})">Copy</button>
+        <button class="btn-copy-addr" onclick="navigator.clipboard.writeText('nftitledao').then(function(){var b=event.target;b.textContent='Copied!';setTimeout(function(){b.textContent='Copy'},1500)})">Copy</button>
       </div>
       <div class="donate-row">
         <div class="donate-icon paypal">
@@ -730,17 +730,19 @@ button { font-family: var(--sans); }
   'use strict';
 
   // ─── TOKEN REGISTRY ────────────────────────────────────────
+  // staticUsdPrice: fallback price (USD) used when Alcor has no market data.
+  // Update these values to reflect your actual exchange rates.
   const TOKENS = [
-    { symbol: 'UBQT',    name: 'Ubitquity Token',   contract: 'ubitquityllc', alcorId: 'ubqt-ubitquityllc',   precision: 4, color: '#00D4AA' },
-    { symbol: 'UBQTX',   name: 'Ubitquity X Token', contract: 'tokencreate',  alcorId: 'ubqtx-tokencreate',   precision: 4, color: '#00B894' },
-    { symbol: 'TITLET',  name: 'Title Token',       contract: 'tokencreate',  alcorId: 'titlet-tokencreate',  precision: 4, color: '#6C5CE7' },
-    { symbol: 'NDAO',    name: 'nDAO Token',        contract: 'tokencreate',  alcorId: 'ndao-tokencreate',    precision: 4, color: '#FDA085' },
-    { symbol: 'NDAOX',   name: 'nDAO X Token',      contract: 'tokencreate',  alcorId: 'ndaox-tokencreate',   precision: 4, color: '#F97316' },
-    { symbol: 'DEED',    name: 'Deed Token',        contract: 'tokencreate',  alcorId: 'deed-tokencreate',    precision: 4, color: '#E17055' },
-    { symbol: 'AETHERT', name: 'Aether Token',      contract: 'tokencreate',  alcorId: 'aethert-tokencreate', precision: 4, color: '#74B9FF' },
-    { symbol: 'GAMES',   name: 'Games Token',       contract: 'tokencreate',  alcorId: 'games-tokencreate',   precision: 4, color: '#A29BFE' },
-    { symbol: 'BEATS',   name: 'Beats Token',       contract: 'tokencreate',  alcorId: 'beats-tokencreate',   precision: 4, color: '#FD79A8' },
-    { symbol: 'CAUDIT',  name: 'Crypto Audit Token', contract: 'tokencreate', alcorId: 'caudit-tokencreate',  precision: 4, color: '#55EFC4' },
+    { symbol: 'UBQT',    name: 'Ubitquity Token',    contract: 'ubitquityllc', alcorId: 'ubqt-ubitquityllc',   precision: 4, color: '#00D4AA', staticUsdPrice: null },
+    { symbol: 'UBQTX',   name: 'Ubitquity X Token',  contract: 'tokencreate',  alcorId: 'ubqtx-tokencreate',   precision: 4, color: '#00B894', staticUsdPrice: null },
+    { symbol: 'TITLET',  name: 'Title Token',        contract: 'tokencreate',  alcorId: 'titlet-tokencreate',  precision: 4, color: '#6C5CE7', staticUsdPrice: 0.01 },
+    { symbol: 'NDAO',    name: 'nDAO Token',         contract: 'tokencreate',  alcorId: 'ndao-tokencreate',    precision: 4, color: '#FDA085', staticUsdPrice: null },
+    { symbol: 'NDAOX',   name: 'nDAO X Token',       contract: 'tokencreate',  alcorId: 'ndaox-tokencreate',   precision: 4, color: '#F97316', staticUsdPrice: 0.01 },
+    { symbol: 'DEED',    name: 'Deed Token',         contract: 'tokencreate',  alcorId: 'deed-tokencreate',    precision: 4, color: '#E17055', staticUsdPrice: 0.01 },
+    { symbol: 'AETHERT', name: 'Aether Token',       contract: 'tokencreate',  alcorId: 'aethert-tokencreate', precision: 4, color: '#74B9FF', staticUsdPrice: 0.01 },
+    { symbol: 'GAMES',   name: 'Games Token',        contract: 'tokencreate',  alcorId: 'games-tokencreate',   precision: 4, color: '#A29BFE', staticUsdPrice: 0.01 },
+    { symbol: 'BEATS',   name: 'Beats Token',        contract: 'tokencreate',  alcorId: 'beats-tokencreate',   precision: 4, color: '#FD79A8', staticUsdPrice: 0.01 },
+    { symbol: 'CAUDIT',  name: 'Crypto Audit Token', contract: 'tokencreate',  alcorId: 'caudit-tokencreate',  precision: 4, color: '#55EFC4', staticUsdPrice: 0.01 },
   ];
 
   const ALCOR_API = 'https://proton.alcor.exchange/api/v2/tokens';
@@ -834,7 +836,7 @@ button { font-family: var(--sans); }
         };
       } catch (err) {
         console.warn('Alcor: ' + token.symbol + ' (' + token.alcorId + '):', err.message);
-        results[token.symbol] = { system_price: null, usd_price: null, loaded: true, error: true };
+        results[token.symbol] = { system_price: null, usd_price: null, loaded: true, error: false };
       }
     });
 
@@ -845,10 +847,19 @@ button { font-family: var(--sans); }
       Object.values(results).forEach(p => {
         if (p && !p.error && p.system_price && !p.usd_price) {
           p.usd_price = p.system_price * state.xprUsdRate;
-          p.usd_derived = true; // flag that this USD value was derived from XPR rate
+          p.usd_derived = true;
         }
       });
     }
+
+    // For tokens with no Alcor data, fall back to staticUsdPrice in the registry
+    TOKENS.forEach(token => {
+      const p = results[token.symbol];
+      if (p && !p.usd_price && !p.system_price && token.staticUsdPrice) {
+        p.usd_price = token.staticUsdPrice;
+        p.usd_static = true; // flag: price is a static fallback, not live market data
+      }
+    });
 
     state.prices = results;
     state.pricesLoading = false;
@@ -1029,10 +1040,11 @@ button { font-family: var(--sans); }
       if (state.pricesLoading && !p) {
         valueHtml = '<span class="price-loading">···</span>';
       } else if (p && !p.error && p.usd_price != null) {
-        const prefix = p.usd_derived ? '~$' : '$';
-        const usdStr = p.usd_price < 0.01 ? p.usd_price.toFixed(6) : p.usd_price.toFixed(4);
-        valueHtml = `<div class="price-usd">${prefix}${usdStr}</div>`;
-        if (p.system_price != null) valueHtml += `<div class="price-xpr">${p.system_price.toFixed(4)} XPR</div>`;
+        const prefix = p.usd_static ? '' : (p.usd_derived ? '~$' : '$');
+        const usdStr = (p.usd_static ? 'fixed $' : prefix) + (p.usd_price < 0.01 ? p.usd_price.toFixed(6) : p.usd_price.toFixed(4));
+        valueHtml = `<div class="price-usd">${usdStr}</div>`;
+        if (p.usd_static) valueHtml += '<div class="price-na" style="font-size:8px;">set rate</div>';
+        else if (p.system_price != null) valueHtml += `<div class="price-xpr">${p.system_price.toFixed(4)} XPR</div>`;
       } else if (p && !p.error && p.system_price != null) {
         valueHtml = `<div class="price-xpr" style="font-size:10px;">${p.system_price.toFixed(4)} XPR</div>`;
         valueHtml += '<div class="price-na" style="font-size:8px;">no USD pair</div>';
@@ -1183,7 +1195,7 @@ button { font-family: var(--sans); }
       ],
     },
     transportOptions: {
-      requestAccount: 'nwosnack2',
+      requestAccount: 'nftitledao',
       requestStatus: false,
     },
     selectorOptions: {
@@ -1287,7 +1299,7 @@ button { font-family: var(--sans); }
     // XPR NETWORK ATOMIC SWAP — WebAuth session.transact()
     // NOTE: Set SWAP_CONTRACT to the deployed swap contract account.
     // ═══════════════════════════════════════════════════════
-    const SWAP_CONTRACT = 'swap.ubq'; // TODO: set deployed swap contract account
+    const SWAP_CONTRACT = 'nftitledao'; // Swap counterparty — nftitledao fulfills swaps manually
 
     const actions = [
       {
