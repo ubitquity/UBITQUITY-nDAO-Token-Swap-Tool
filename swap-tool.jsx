@@ -1,7 +1,7 @@
 // ─── Proton Web SDK (WebAuth) ─────────────────────────────────
 // Import via npm: import { ConnectWallet } from "@proton/web-sdk";
-// Or load CDN in your HTML: <script src="https://unpkg.com/@proton/web-sdk/dist/index.umd.js"></script>
-// Then access as: const { ConnectWallet } = window.ProtonWebSDK;
+// Or load CDN in your HTML: <script src="https://unpkg.com/@proton/web-sdk/lib/proton-web-sdk.bundle.js"></script>
+// Then access as: window.ProtonWebSDK.ConnectWallet(...)
 import { useState, useEffect, useCallback, useRef } from "react";
 
 // ─── Token Registry ──────────────────────────────────────────
