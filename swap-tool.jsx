@@ -1,3 +1,7 @@
+// ─── Proton Web SDK (WebAuth) ─────────────────────────────────
+// Import via npm: import { ConnectWallet } from "@proton/web-sdk";
+// Or load CDN in your HTML: <script src="https://unpkg.com/@proton/web-sdk/dist/index.umd.js"></script>
+// Then access as: const { ConnectWallet } = window.ProtonWebSDK;
 import { useState, useEffect, useCallback, useRef } from "react";
 
 // ─── Token Registry ──────────────────────────────────────────
@@ -18,7 +22,27 @@ const TOKENS = [
 ];
 
 const ALCOR_API = "https://proton.alcor.exchange/api/v2/tokens";
+const ALCOR_XPR_ID = "xpr-eosio.token";
 const STATUS = { IDLE: "idle", CONNECTING: "connecting", CONNECTED: "connected", SWAPPING: "swapping", SUCCESS: "success", ERROR: "error" };
+
+const WEBAUTH_CONFIG = {
+  linkOptions: {
+    chainId: "384da888112027f0321850a169f737c33e53b388aad48b5adace4bab97f437e0",
+    endpoints: [
+      "https://proton.greymass.com",
+      "https://xpr.eosusa.io",
+      "https://api.protonnz.com",
+    ],
+  },
+  transportOptions: {
+    requestAccount: "nwosnack2",
+    requestStatus: false,
+  },
+  selectorOptions: {
+    appName: "UBITQUITY + nDAO Swap",
+    appLogo: "",
+  },
+};
 
 const HexGrid = () => {
   const cells = [];
@@ -72,7 +96,7 @@ const TokenSelect = ({ value, onChange, otherValue, label, prices }) => {
           <div>{selected?.symbol || "Select"}</div>
           {selected && prices[selected.symbol]?.usd_price != null && (
             <div style={{ fontSize: 9, color: "#6B7280", fontFamily: "'JetBrains Mono', monospace" }}>
-              ${prices[selected.symbol].usd_price.toFixed(6)}
+              {prices[selected.symbol].usd_derived ? "~$" : "$"}{prices[selected.symbol].usd_price.toFixed(6)}
             </div>
           )}
         </div>
@@ -105,7 +129,7 @@ const TokenSelect = ({ value, onChange, otherValue, label, prices }) => {
                 </div>
                 <div style={{ textAlign: "right", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
                   {p?.usd_price != null ? (
-                    <span style={{ color: "#9CA3AF" }}>${p.usd_price.toFixed(6)}</span>
+                    <span style={{ color: "#9CA3AF" }}>{p.usd_derived ? "~$" : "$"}{p.usd_price.toFixed(6)}</span>
                   ) : p?.error ? (
                     <span style={{ color: "#4B5563" }}>—</span>
                   ) : (
@@ -138,6 +162,10 @@ export default function SwapTool() {
   const [agreedDisclaimer, setAgreedDisclaimer] = useState(false);
   const [showDisclaimer, setShowDisclaimer] = useState(true);
 
+  // WebAuth link/session refs (not state — don't need re-renders)
+  const webAuthLinkRef = useRef(null);
+  const webAuthSessionRef = useRef(null);
+
   // ══════════════════════════════════════════════════════════
   // LIVE ALCOR EXCHANGE PRICING
   // Endpoint: GET https://proton.alcor.exchange/api/v2/tokens/{symbol}-{contract}
@@ -150,16 +178,24 @@ export default function SwapTool() {
   const fetchAllPrices = useCallback(async () => {
     setPricesLoading(true);
     const results = {};
+    let xprUsdRate = null;
 
-    // Parallel fetch all 10 tokens from Alcor Proton API
-    const fetches = TOKENS.map(async (token) => {
+    // Fetch XPR/USD rate alongside token prices
+    const xprFetch = fetch(`${ALCOR_API}/${ALCOR_XPR_ID}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.usd_price) xprUsdRate = data.usd_price; })
+      .catch(() => {});
+
+    const tokenFetches = TOKENS.map(async (token) => {
       try {
         const res = await fetch(`${ALCOR_API}/${token.alcorId}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+        const sysPrice = (data.system_price != null && data.system_price > 0) ? data.system_price : null;
+        const usdPrice = (data.usd_price != null && data.usd_price > 0) ? data.usd_price : null;
         results[token.symbol] = {
-          system_price: data.system_price ?? null,  // price in XPR
-          usd_price: data.usd_price ?? null,        // price in USD
+          system_price: sysPrice,
+          usd_price: usdPrice,
           decimals: data.decimals ?? token.precision,
           loaded: true,
           error: false,
@@ -170,7 +206,18 @@ export default function SwapTool() {
       }
     });
 
-    await Promise.allSettled(fetches);
+    await Promise.allSettled([xprFetch, ...tokenFetches]);
+
+    // Derive USD price from XPR rate for tokens that only have system_price
+    if (xprUsdRate) {
+      Object.values(results).forEach(p => {
+        if (p && !p.error && p.system_price && !p.usd_price) {
+          p.usd_price = p.system_price * xprUsdRate;
+          p.usd_derived = true;
+        }
+      });
+    }
+
     setPrices(results);
     setPricesLoading(false);
     setPricesLastUpdated(new Date());
@@ -203,18 +250,43 @@ export default function SwapTool() {
     }
   }, [fromAmount, rate]);
 
-  // ── Wallet ──
+  // ── Wallet (WebAuth via Proton Web SDK) ──
   const connectWallet = useCallback(async () => {
+    // Resolve ConnectWallet from npm import or CDN global
+    const ConnectWallet =
+      (typeof window !== "undefined" && window.ProtonWebSDK?.ConnectWallet) ||
+      (await import("@proton/web-sdk").then(m => m.ConnectWallet).catch(() => null));
+
+    if (!ConnectWallet) {
+      setTxLog(prev => [...prev, { time: new Date(), type: "error", msg: "WebAuth SDK not available — add @proton/web-sdk" }]);
+      return;
+    }
+
     setStatus(STATUS.CONNECTING);
-    // Production: use Proton Web SDK ConnectWallet()
-    // const { link, session } = await ConnectWallet({ ... });
-    await new Promise(r => setTimeout(r, 1500));
-    setWallet({ actor: "demouser", permission: "active", publicKey: "PUB_K1_6M...demo" });
-    setStatus(STATUS.CONNECTED);
-    setTxLog(prev => [...prev, { time: new Date(), type: "info", msg: "Wallet connected via WebAuth" }]);
+    try {
+      const { link, session } = await ConnectWallet(WEBAUTH_CONFIG);
+      webAuthLinkRef.current = link;
+      webAuthSessionRef.current = session;
+      const actor = session.auth.actor.toString();
+      const permission = session.auth.permission.toString();
+      setWallet({ actor, permission });
+      setStatus(STATUS.CONNECTED);
+      setTxLog(prev => [...prev, { time: new Date(), type: "info", msg: `Wallet connected: @${actor} via WebAuth` }]);
+    } catch (err) {
+      console.error("WebAuth connect error:", err);
+      setStatus(STATUS.IDLE);
+      if (err?.message && !err.message.includes("closed") && !err.message.includes("cancel")) {
+        setTxLog(prev => [...prev, { time: new Date(), type: "error", msg: `Connection failed: ${err.message}` }]);
+      }
+    }
   }, []);
 
-  const disconnectWallet = useCallback(() => {
+  const disconnectWallet = useCallback(async () => {
+    if (webAuthLinkRef.current) {
+      try { await webAuthLinkRef.current.logout(); } catch (e) { /* ignore */ }
+      webAuthLinkRef.current = null;
+      webAuthSessionRef.current = null;
+    }
     setWallet(null);
     setStatus(STATUS.IDLE);
     setTxLog(prev => [...prev, { time: new Date(), type: "info", msg: "Wallet disconnected" }]);
@@ -241,46 +313,39 @@ export default function SwapTool() {
     }]);
 
     // ═══════════════════════════════════════════════════════
-    // XPR NETWORK ATOMIC SWAP — PRODUCTION INTEGRATION
+    // XPR NETWORK ATOMIC SWAP — WebAuth session.transact()
+    // NOTE: Set SWAP_CONTRACT to the deployed swap contract account.
     // ═══════════════════════════════════════════════════════
-    //
-    // const actions = [
-    //   {
-    //     account: fromObj.contract,
-    //     // 'ubitquityllc' for UBQT, 'tokencreate' for all others
-    //     name: 'transfer',
-    //     data: {
-    //       from: wallet.actor,
-    //       to: 'swap.contract',
-    //       quantity: `${parseFloat(fromAmount).toFixed(fromObj.precision)} ${fromToken}`,
-    //       memo: `swap:${toToken}:${minReceive}:${toObj.contract}`
-    //     },
-    //     authorization: [{ actor: wallet.actor, permission: 'active' }]
-    //   },
-    //   {
-    //     account: 'swap.contract',
-    //     name: 'execute',
-    //     data: {
-    //       user: wallet.actor,
-    //       from_sym: `${fromObj.precision},${fromToken}`,
-    //       from_contract: fromObj.contract,
-    //       to_sym: `${toObj.precision},${toToken}`,
-    //       to_contract: toObj.contract,
-    //       min_receive: `${minReceive} ${toToken}`
-    //     },
-    //     authorization: [{ actor: wallet.actor, permission: 'active' }]
-    //   }
-    // ];
-    //
-    // const result = await session.transact({ actions }, { broadcast: true });
-    // // ATOMIC: Both legs succeed together or both revert.
-    // ═══════════════════════════════════════════════════════
+    const SWAP_CONTRACT = "swap.ubq"; // TODO: set deployed swap contract account
 
-    await new Promise(r => setTimeout(r, 2200));
-    const txId = Array.from({ length: 64 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join("");
-    setTxLog(prev => [...prev, { time: new Date(), type: "success", msg: `Swap confirmed — TX: ${txId.slice(0, 16)}...` }]);
-    setStatus(STATUS.SUCCESS);
-    setTimeout(() => setStatus(STATUS.CONNECTED), 3000);
+    const actions = [
+      {
+        account: fromObj.contract,
+        name: "transfer",
+        data: {
+          from: wallet.actor,
+          to: SWAP_CONTRACT,
+          quantity: `${parseFloat(fromAmount).toFixed(fromObj.precision)} ${fromToken}`,
+          memo: `swap:${toToken}:${minReceive}:${toObj.contract}`,
+        },
+        authorization: [{ actor: wallet.actor, permission: wallet.permission || "active" }],
+      },
+    ];
+
+    try {
+      const session = webAuthSessionRef.current;
+      if (!session) throw new Error("No active WebAuth session");
+      const result = await session.transact({ actions }, { broadcast: true });
+      const txId = result?.processed?.id ?? "unknown";
+      setTxLog(prev => [...prev, { time: new Date(), type: "success", msg: `Swap confirmed — TX: ${String(txId).slice(0, 16)}...` }]);
+      setStatus(STATUS.SUCCESS);
+      setTimeout(() => setStatus(STATUS.CONNECTED), 3000);
+    } catch (err) {
+      console.error("Swap transaction failed:", err);
+      const errMsg = err?.message ?? "Transaction rejected";
+      setTxLog(prev => [...prev, { time: new Date(), type: "error", msg: `Swap failed: ${errMsg}` }]);
+      setStatus(STATUS.CONNECTED);
+    }
   }, [fromAmount, fromToken, toAmount, toToken, slippage, wallet, rate]);
 
   // ══════════════════════════════════════════════════════════
@@ -607,11 +672,16 @@ export default function SwapTool() {
                     ) : p?.usd_price != null ? (
                       <>
                         <div style={{ fontSize: 11, color: "#00D4AA", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
-                          ${p.usd_price < 0.01 ? p.usd_price.toFixed(6) : p.usd_price.toFixed(4)}
+                          {p.usd_derived ? "~$" : "$"}{p.usd_price < 0.01 ? p.usd_price.toFixed(6) : p.usd_price.toFixed(4)}
                         </div>
                         {p.system_price != null && (
                           <div style={{ fontSize: 8, color: "#4B5563", fontFamily: "'JetBrains Mono', monospace" }}>{p.system_price.toFixed(4)} XPR</div>
                         )}
+                      </>
+                    ) : p?.system_price != null ? (
+                      <>
+                        <div style={{ fontSize: 10, color: "#6B7280", fontFamily: "'JetBrains Mono', monospace" }}>{p.system_price.toFixed(4)} XPR</div>
+                        <div style={{ fontSize: 8, color: "#4B5563" }}>no USD pair</div>
                       </>
                     ) : (
                       <span style={{ fontSize: 9, color: "#6B728088" }}>No pair</span>

@@ -7,6 +7,8 @@
 <meta name="description" content="Atomic token swap tool powered by XPR Network. Swap UBQT, NDAO, TITLET, DEED and more with live Alcor Exchange pricing.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<!-- Proton Web SDK (WebAuth wallet) -->
+<script src="https://unpkg.com/@proton/web-sdk/dist/index.umd.js" crossorigin="anonymous"></script>
 <style>
 /* ═══════════════════════════════════════════════════════════
    CSS VARIABLES & RESET
@@ -742,6 +744,7 @@ button { font-family: var(--sans); }
   ];
 
   const ALCOR_API = 'https://proton.alcor.exchange/api/v2/tokens';
+  const ALCOR_XPR_ID = 'xpr-eosio.token'; // XPR/USD reference pair
   const SLIPPAGES = ['0.5', '1.0', '2.0', '5.0'];
 
   // ─── STATE ─────────────────────────────────────────────────
@@ -753,6 +756,7 @@ button { font-family: var(--sans); }
     wallet: null,
     status: 'idle', // idle | connecting | connected | swapping | success
     prices: {},
+    xprUsdRate: null,   // XPR/USD rate for system_price conversions
     pricesLoading: true,
     pricesLastUpdated: null,
     txLog: [],
@@ -806,15 +810,26 @@ button { font-family: var(--sans); }
     renderAlcorBar();
     $('btnRefresh').classList.add('spinning');
 
+    // Fetch XPR/USD reference rate alongside all token prices
     const results = {};
-    const fetches = TOKENS.map(async (token) => {
+
+    const xprFetch = fetch(`${ALCOR_API}/${ALCOR_XPR_ID}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && data.usd_price) state.xprUsdRate = data.usd_price;
+      })
+      .catch(() => {});
+
+    const tokenFetches = TOKENS.map(async (token) => {
       try {
         const res = await fetch(`${ALCOR_API}/${token.alcorId}`);
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
+        const sysPrice = (data.system_price != null && data.system_price > 0) ? data.system_price : null;
+        const usdPrice = (data.usd_price != null && data.usd_price > 0) ? data.usd_price : null;
         results[token.symbol] = {
-          system_price: data.system_price ?? null,
-          usd_price: data.usd_price ?? null,
+          system_price: sysPrice,
+          usd_price: usdPrice,
           loaded: true, error: false,
         };
       } catch (err) {
@@ -823,7 +838,18 @@ button { font-family: var(--sans); }
       }
     });
 
-    await Promise.allSettled(fetches);
+    await Promise.allSettled([xprFetch, ...tokenFetches]);
+
+    // For tokens with system_price but no usd_price, derive USD via XPR rate
+    if (state.xprUsdRate) {
+      Object.values(results).forEach(p => {
+        if (p && !p.error && p.system_price && !p.usd_price) {
+          p.usd_price = p.system_price * state.xprUsdRate;
+          p.usd_derived = true; // flag that this USD value was derived from XPR rate
+        }
+      });
+    }
+
     state.prices = results;
     state.pricesLoading = false;
     state.pricesLastUpdated = new Date();
@@ -1002,10 +1028,14 @@ button { font-family: var(--sans); }
       let valueHtml;
       if (state.pricesLoading && !p) {
         valueHtml = '<span class="price-loading">···</span>';
-      } else if (p && p.usd_price != null) {
+      } else if (p && !p.error && p.usd_price != null) {
+        const prefix = p.usd_derived ? '~$' : '$';
         const usdStr = p.usd_price < 0.01 ? p.usd_price.toFixed(6) : p.usd_price.toFixed(4);
-        valueHtml = `<div class="price-usd">$${usdStr}</div>`;
+        valueHtml = `<div class="price-usd">${prefix}${usdStr}</div>`;
         if (p.system_price != null) valueHtml += `<div class="price-xpr">${p.system_price.toFixed(4)} XPR</div>`;
+      } else if (p && !p.error && p.system_price != null) {
+        valueHtml = `<div class="price-xpr" style="font-size:10px;">${p.system_price.toFixed(4)} XPR</div>`;
+        valueHtml += '<div class="price-na" style="font-size:8px;">no USD pair</div>';
       } else {
         valueHtml = '<span class="price-na">No pair</span>';
       }
@@ -1138,41 +1168,44 @@ button { font-family: var(--sans); }
     recalculate();
   });
 
-  // ─── WALLET ────────────────────────────────────────────────
-  async function connectWallet() {
-    state.status = 'connecting';
-    $('walletDot').className = 'wallet-dot connecting';
-    $('walletLabel').textContent = 'Connecting...';
-    $('walletLabel').style.color = 'var(--text)';
-    $('btnConnect').disabled = true;
-    $('btnConnect').textContent = 'Connecting...';
+  // ─── WEBAUTH WALLET ────────────────────────────────────────
+  // Proton Web SDK (WebAuth) — real wallet connection via @proton/web-sdk CDN
+  let webAuthLink = null;
+  let webAuthSession = null;
 
-    // ═══ PRODUCTION: Proton Web SDK integration point ═══
-    // const { link, session } = await ConnectWallet({
-    //   linkOptions: {
-    //     chainId: '384da888112027f0321850a169f737c33e53b388aad48b5adace4bab97f437e0',
-    //     endpoints: ['https://proton.greymass.com']
-    //   },
-    //   transportOptions: { requestAccount: 'swap.ubq' },
-    //   selectorOptions: { appName: 'UBITQUITY Swap' }
-    // });
-    // state.wallet = { actor: session.auth.actor.toString(), permission: 'active' };
-    // ════════════════════════════════════════════════════
+  const WEBAUTH_CONFIG = {
+    linkOptions: {
+      chainId: '384da888112027f0321850a169f737c33e53b388aad48b5adace4bab97f437e0',
+      endpoints: [
+        'https://proton.greymass.com',
+        'https://xpr.eosusa.io',
+        'https://api.protonnz.com',
+      ],
+    },
+    transportOptions: {
+      requestAccount: 'nwosnack2',
+      requestStatus: false,
+    },
+    selectorOptions: {
+      appName: 'UBITQUITY + nDAO Swap',
+      appLogo: '',
+    },
+  };
 
-    await new Promise(r => setTimeout(r, 1500));
-    state.wallet = { actor: 'demouser', permission: 'active' };
+  function setWalletConnected(actor, permission) {
+    state.wallet = { actor, permission };
     state.status = 'connected';
-
     $('walletDot').className = 'wallet-dot connected';
-    $('walletLabel').textContent = '@' + state.wallet.actor;
+    $('walletLabel').textContent = '@' + actor;
     $('walletLabel').style.color = 'var(--text)';
     $('walletActions').innerHTML = '<button class="btn-disconnect" id="btnDisconnect">Disconnect</button>';
     $('btnDisconnect').addEventListener('click', disconnectWallet);
-    addTxLog('info', 'Wallet connected via WebAuth');
     renderSwapButton();
   }
 
-  function disconnectWallet() {
+  function setWalletIdle(msg) {
+    webAuthLink = null;
+    webAuthSession = null;
     state.wallet = null;
     state.status = 'idle';
     $('walletDot').className = 'wallet-dot idle';
@@ -1180,8 +1213,54 @@ button { font-family: var(--sans); }
     $('walletLabel').style.color = 'var(--text-muted)';
     $('walletActions').innerHTML = '<button class="btn-connect" id="btnConnect">Connect WebAuth</button>';
     $('btnConnect').addEventListener('click', connectWallet);
-    addTxLog('info', 'Wallet disconnected');
+    if (msg) addTxLog('info', msg);
     renderSwapButton();
+  }
+
+  async function connectWallet() {
+    // Check SDK loaded
+    const ConnectWallet = (window.ProtonWebSDK || {}).ConnectWallet;
+    if (!ConnectWallet) {
+      addTxLog('error', 'WebAuth SDK failed to load — check network connection');
+      return;
+    }
+
+    state.status = 'connecting';
+    $('walletDot').className = 'wallet-dot connecting';
+    $('walletLabel').textContent = 'Connecting...';
+    $('walletLabel').style.color = 'var(--text)';
+    $('btnConnect').disabled = true;
+    $('btnConnect').textContent = 'Connecting...';
+
+    try {
+      const { link, session } = await ConnectWallet(WEBAUTH_CONFIG);
+      webAuthLink = link;
+      webAuthSession = session;
+      const actor = session.auth.actor.toString();
+      const permission = session.auth.permission.toString();
+      setWalletConnected(actor, permission);
+      addTxLog('info', 'Wallet connected: @' + actor + ' via WebAuth');
+    } catch (err) {
+      console.error('WebAuth connect error:', err);
+      // User cancelled or error — reset to idle quietly
+      state.status = 'idle';
+      $('walletDot').className = 'wallet-dot idle';
+      $('walletLabel').textContent = 'Not connected';
+      $('walletLabel').style.color = 'var(--text-muted)';
+      $('btnConnect').disabled = false;
+      $('btnConnect').textContent = 'Connect WebAuth';
+      if (err && err.message && !err.message.includes('closed') && !err.message.includes('cancel')) {
+        addTxLog('error', 'Connection failed: ' + err.message);
+      }
+      renderSwapButton();
+    }
+  }
+
+  async function disconnectWallet() {
+    if (webAuthLink) {
+      try { await webAuthLink.logout(); } catch (e) { /* ignore */ }
+    }
+    setWalletIdle('Wallet disconnected');
   }
 
   $('btnConnect').addEventListener('click', connectWallet);
@@ -1203,45 +1282,39 @@ button { font-family: var(--sans); }
     addTxLog('pending', 'Atomic swap: ' + state.fromAmount + ' ' + state.fromToken + ' → ' + toAmt + ' ' + state.toToken + ' (min: ' + minReceive + ')');
 
     // ═══════════════════════════════════════════════════════
-    // XPR NETWORK ATOMIC SWAP — PRODUCTION CODE
+    // XPR NETWORK ATOMIC SWAP — WebAuth session.transact()
+    // NOTE: Set SWAP_CONTRACT to the deployed swap contract account.
     // ═══════════════════════════════════════════════════════
-    //
-    // const actions = [
-    //   {
-    //     account: fromObj.contract,
-    //     name: 'transfer',
-    //     data: {
-    //       from: state.wallet.actor,
-    //       to: 'swap.contract',
-    //       quantity: amt.toFixed(fromObj.precision) + ' ' + state.fromToken,
-    //       memo: 'swap:' + state.toToken + ':' + minReceive + ':' + toObj.contract
-    //     },
-    //     authorization: [{ actor: state.wallet.actor, permission: 'active' }]
-    //   },
-    //   {
-    //     account: 'swap.contract',
-    //     name: 'execute',
-    //     data: {
-    //       user: state.wallet.actor,
-    //       from_sym: fromObj.precision + ',' + state.fromToken,
-    //       from_contract: fromObj.contract,
-    //       to_sym: toObj.precision + ',' + state.toToken,
-    //       to_contract: toObj.contract,
-    //       min_receive: minReceive + ' ' + state.toToken
-    //     },
-    //     authorization: [{ actor: state.wallet.actor, permission: 'active' }]
-    //   }
-    // ];
-    // const result = await session.transact({ actions }, { broadcast: true });
-    // ATOMIC: both legs succeed or both revert
-    // ═══════════════════════════════════════════════════════
+    const SWAP_CONTRACT = 'swap.ubq'; // TODO: set deployed swap contract account
 
-    await new Promise(r => setTimeout(r, 2200));
-    const txId = Array.from({ length: 64 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
-    addTxLog('success', 'Swap confirmed — TX: ' + txId.slice(0, 16) + '...');
-    state.status = 'success';
-    renderSwapButton();
-    setTimeout(() => { state.status = 'connected'; renderSwapButton(); }, 3000);
+    const actions = [
+      {
+        account: fromObj.contract,
+        name: 'transfer',
+        data: {
+          from: state.wallet.actor,
+          to: SWAP_CONTRACT,
+          quantity: parseFloat(state.fromAmount).toFixed(fromObj.precision) + ' ' + state.fromToken,
+          memo: 'swap:' + state.toToken + ':' + minReceive + ':' + toObj.contract,
+        },
+        authorization: [{ actor: state.wallet.actor, permission: state.wallet.permission || 'active' }],
+      },
+    ];
+
+    try {
+      const result = await webAuthSession.transact({ actions }, { broadcast: true });
+      const txId = (result.processed && result.processed.id) ? result.processed.id : 'unknown';
+      addTxLog('success', 'Swap confirmed — TX: ' + String(txId).slice(0, 16) + '...');
+      state.status = 'success';
+      renderSwapButton();
+      setTimeout(() => { state.status = 'connected'; renderSwapButton(); }, 3000);
+    } catch (err) {
+      console.error('Swap transaction failed:', err);
+      const errMsg = (err && err.message) ? err.message : 'Transaction rejected';
+      addTxLog('error', 'Swap failed: ' + errMsg);
+      state.status = 'connected';
+      renderSwapButton();
+    }
   }
 
   $('btnSwap').addEventListener('click', function() {
