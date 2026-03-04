@@ -1219,7 +1219,7 @@ button { font-family: var(--sans); }
 
   async function connectWallet() {
     // Check SDK loaded
-    const ConnectWallet = (window.ProtonWebSDK || {}).ConnectWallet;
+    const ConnectWallet = (window.ProtonWebSDK || {}).default || (window.ProtonWebSDK || {}).ConnectWallet;
     if (!ConnectWallet) {
       addTxLog('error', 'WebAuth SDK failed to load — check network connection');
       return;
