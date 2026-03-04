@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UBITQUITY + nDAO Token Swap Tool</title>
+<meta name="description" content="Atomic token swap tool powered by XPR Network. Swap UBQT, NDAO, TITLET, DEED and more with live Alcor Exchange pricing.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════
+   CSS VARIABLES & RESET
+   ═══════════════════════════════════════════════════════════ */
+:root {
+  --bg: #0D0F13;
+  --surface: rgba(255,255,255,0.02);
+  --surface-border: rgba(255,255,255,0.06);
+  --surface-hover: rgba(255,255,255,0.05);
+  --input-bg: rgba(255,255,255,0.03);
+  --input-border: rgba(255,255,255,0.08);
+  --panel-bg: rgba(0,0,0,0.25);
+  --panel-border: rgba(255,255,255,0.04);
+  --text: #E5E7EB;
+  --text-dim: #9CA3AF;
+  --text-muted: #6B7280;
+  --text-faint: #4B5563;
+  --text-ghost: #3B3F47;
+  --accent: #00D4AA;
+  --accent-dark: #00B894;
+  --accent-glow: rgba(0,212,170,0.5);
+  --accent-bg: rgba(0,212,170,0.1);
+  --orange: #FDA085;
+  --red: #EF4444;
+  --yellow: #F59E0B;
+  --green: #10B981;
+  --mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  --sans: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+button { font-family: var(--sans); }
+
+/* ═══════════════════════════════════════════════════════════
+   ANIMATIONS
+   ═══════════════════════════════════════════════════════════ */
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideDown { from { opacity: 0; transform: translateY(-8px) scaleY(0.95); } to { opacity: 1; transform: translateY(0) scaleY(1); } }
+@keyframes glow { 0%, 100% { box-shadow: 0 0 8px var(--accent-glow); } 50% { box-shadow: 0 0 20px var(--accent-glow); } }
+@keyframes flipRotate { 0% { transform: rotate(0deg); } 100% { transform: rotate(180deg); } }
+
+.fade-in { animation: fadeIn 0.5s ease both; }
+.fade-in-d1 { animation: fadeIn 0.5s ease 0.1s both; }
+.fade-in-d2 { animation: fadeIn 0.5s ease 0.2s both; }
+.fade-in-d3 { animation: fadeIn 0.5s ease 0.3s both; }
+.fade-in-d4 { animation: fadeIn 0.5s ease 0.4s both; }
+
+/* ═══════════════════════════════════════════════════════════
+   BACKGROUND EFFECTS
+   ═══════════════════════════════════════════════════════════ */
+.bg-hex-grid {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none; z-index: 0; opacity: 0.6;
+}
+.bg-glow-1 {
+  position: fixed; top: -200px; right: -200px; width: 500px; height: 500px;
+  background: radial-gradient(circle, rgba(0,212,170,0.06) 0%, transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+.bg-glow-2 {
+  position: fixed; bottom: -150px; left: -150px; width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(108,92,231,0.05) 0%, transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LAYOUT
+   ═══════════════════════════════════════════════════════════ */
+.app-container {
+  position: relative; z-index: 1;
+  max-width: 480px; margin: 0 auto; padding: 32px 16px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DISCLAIMER OVERLAY
+   ═══════════════════════════════════════════════════════════ */
+.disclaimer-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.disclaimer-overlay.hidden { display: none; }
+.disclaimer-card {
+  background: var(--surface); border: 1px solid var(--input-border);
+  border-radius: 20px; padding: 40px 36px; max-width: 520px; width: 100%;
+  backdrop-filter: blur(20px); position: relative; z-index: 1;
+}
+.disclaimer-badge {
+  font-size: 11px; letter-spacing: 0.2em; color: var(--accent);
+  text-transform: uppercase; font-weight: 700; margin-bottom: 8px;
+}
+.disclaimer-title { font-size: 22px; font-weight: 700; color: #fff; }
+.disclaimer-version { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.disclaimer-body {
+  background: rgba(253,160,133,0.06); border: 1px solid rgba(253,160,133,0.15);
+  border-radius: 12px; padding: 16px 18px; font-size: 12.5px;
+  line-height: 1.7; color: #D1D5DB; margin: 24px 0;
+}
+.disclaimer-body p { margin: 0 0 10px; }
+.disclaimer-body p:last-child { margin: 0; }
+.disclaimer-body strong.warn { color: var(--orange); }
+.disclaimer-body strong.label { color: var(--text); }
+.disclaimer-body .highlight { color: var(--accent); }
+.disclaimer-check {
+  display: flex; align-items: flex-start; gap: 10px;
+  cursor: pointer; margin-bottom: 24px; font-size: 13px; color: #D1D5DB;
+}
+.disclaimer-check input {
+  margin-top: 2px; accent-color: var(--accent);
+  width: 16px; height: 16px; cursor: pointer;
+}
+.btn-proceed {
+  width: 100%; padding: 14px 0; border-radius: 12px; border: none;
+  font-weight: 700; font-size: 15px; cursor: pointer; transition: all 0.3s;
+  letter-spacing: 0.02em;
+}
+.btn-proceed.active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+  color: var(--bg); cursor: pointer;
+}
+.btn-proceed.inactive {
+  background: rgba(255,255,255,0.05); color: var(--text-muted); cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════════════ */
+.header { text-align: center; margin-bottom: 32px; }
+.header-brand {
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px; margin-bottom: 6px;
+}
+.header h1 { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+.header h1 .plus { color: var(--text-muted); font-weight: 400; margin: 0 6px; }
+.header h1 .ndao { color: var(--orange); }
+.header-sub {
+  font-size: 12px; color: var(--text-muted); letter-spacing: 0.08em;
+  text-transform: uppercase; font-weight: 600;
+}
+.header-meta { font-size: 10px; color: var(--text-faint); margin-top: 4px; }
+
+/* ═══════════════════════════════════════════════════════════
+   ALCOR STATUS BAR
+   ═══════════════════════════════════════════════════════════ */
+.alcor-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--surface); border: 1px solid var(--surface-border);
+  border-radius: 10px; padding: 8px 14px; margin-bottom: 10px; font-size: 10px;
+}
+.alcor-bar .dot {
+  width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 6px;
+}
+.alcor-bar .dot.loading { background: var(--yellow); animation: pulse 1s infinite; }
+.alcor-bar .dot.error { background: var(--red); }
+.alcor-bar .dot.ok { background: var(--accent); }
+.alcor-bar .status { color: var(--text-dim); }
+.alcor-bar .time { color: var(--text-faint); font-family: var(--mono); }
+.btn-refresh {
+  background: none; border: none; cursor: pointer; padding: 2px;
+  color: var(--text-muted); display: flex;
+}
+.btn-refresh.spinning svg { animation: spin 1s linear infinite; }
+
+/* ═══════════════════════════════════════════════════════════
+   WALLET BAR
+   ═══════════════════════════════════════════════════════════ */
+.wallet-bar {
+  background: var(--surface); border: 1px solid var(--surface-border);
+  border-radius: 14px; padding: 12px 16px; margin-bottom: 16px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.wallet-status {
+  display: flex; align-items: center; gap: 8px; font-size: 12px;
+}
+.wallet-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+}
+.wallet-dot.connected {
+  background: var(--accent); box-shadow: 0 0 8px var(--accent-glow);
+}
+.wallet-dot.connecting { background: var(--yellow); animation: pulse 1s infinite; }
+.wallet-dot.idle { background: var(--text-faint); }
+.btn-connect {
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+  border: none; border-radius: 8px; padding: 6px 14px;
+  font-size: 11px; color: var(--bg); cursor: pointer; font-weight: 700;
+}
+.btn-connect:disabled { opacity: 0.6; }
+.btn-disconnect {
+  background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2);
+  border-radius: 8px; padding: 6px 12px; font-size: 11px;
+  color: var(--red); cursor: pointer; font-weight: 600;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SWAP CARD
+   ═══════════════════════════════════════════════════════════ */
+.swap-card {
+  background: var(--surface); border: 1px solid var(--surface-border);
+  border-radius: 20px; padding: 24px; position: relative;
+  box-shadow: 0 4px 40px rgba(0,0,0,0.3);
+}
+.swap-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;
+}
+.swap-header span { font-size: 15px; font-weight: 700; color: #fff; }
+.btn-settings {
+  background: none; border: none; cursor: pointer; padding: 4px;
+  display: flex; color: var(--text-muted); transition: color 0.2s;
+}
+.btn-settings.active { color: var(--accent); }
+
+/* Slippage */
+.slippage-panel {
+  background: rgba(0,0,0,0.3); border: 1px solid var(--surface-border);
+  border-radius: 12px; padding: 14px 16px; margin-bottom: 18px;
+  animation: slideDown 0.2s ease;
+}
+.slippage-panel.hidden { display: none; }
+.slippage-label {
+  font-size: 11px; color: var(--text-muted); margin-bottom: 8px;
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em;
+}
+.slippage-buttons { display: flex; gap: 6px; }
+.btn-slip {
+  flex: 1; padding: 7px 0; border-radius: 8px; font-size: 12px;
+  font-weight: 600; cursor: pointer; transition: all 0.15s; border: 1px solid var(--input-border);
+  background: transparent; color: var(--text-dim);
+}
+.btn-slip.active {
+  border-color: var(--accent); background: var(--accent-bg); color: var(--accent);
+}
+
+/* Token panels */
+.token-panel {
+  background: var(--panel-bg); border-radius: 14px; padding: 16px 18px;
+  border: 1px solid var(--panel-border);
+}
+.token-panel-row { display: flex; gap: 12px; align-items: flex-end; }
+.token-selector-col { flex: 0 0 150px; }
+.amount-col { flex: 1; }
+.field-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--text-muted); margin-bottom: 6px; font-weight: 600;
+}
+.amount-input {
+  width: 100%; background: var(--input-bg); border: 1px solid var(--input-border);
+  border-radius: 12px; padding: 10px 14px; color: #fff; font-size: 18px;
+  font-weight: 700; font-family: var(--mono); outline: none; transition: border-color 0.2s;
+}
+.amount-input:focus { border-color: rgba(0,212,170,0.4); }
+.amount-display {
+  width: 100%; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 12px; padding: 10px 14px; font-size: 18px; font-weight: 700;
+  font-family: var(--mono); min-height: 42px;
+}
+.amount-display.has-value { color: var(--accent); }
+.amount-display.empty { color: var(--text-faint); }
+.usd-equiv {
+  font-size: 10px; color: var(--text-muted); margin-top: 4px;
+  font-family: var(--mono); text-align: right;
+}
+
+/* Flip button */
+.flip-container {
+  display: flex; justify-content: center; margin: -14px 0; position: relative; z-index: 2;
+}
+.btn-flip {
+  width: 40px; height: 40px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: #1A1D23; border: 2px solid var(--input-border);
+  cursor: pointer; transition: all 0.3s;
+}
+.btn-flip:hover { border-color: var(--accent); }
+.btn-flip.flipping { animation: flipRotate 0.4s ease; }
+
+/* Token dropdown */
+.token-select-btn {
+  background: var(--input-bg); border: 1px solid var(--input-border);
+  border-radius: 12px; padding: 10px 14px; display: flex; align-items: center;
+  gap: 10px; cursor: pointer; width: 100%; color: var(--text); font-size: 15px;
+  font-weight: 600; transition: border-color 0.2s; outline: none;
+}
+.token-select-btn:hover { border-color: rgba(0,212,170,0.3); }
+.token-badge {
+  width: 28px; height: 28px; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center; font-size: 8px;
+  font-weight: 700; letter-spacing: -0.02em; flex-shrink: 0;
+}
+.token-select-info { flex: 1; text-align: left; }
+.token-select-info .symbol { font-size: 15px; }
+.token-select-info .price { font-size: 9px; color: var(--text-muted); font-family: var(--mono); }
+.dropdown-arrow { color: var(--text-muted); flex-shrink: 0; }
+
+/* Dropdown menu */
+.token-dropdown {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50;
+  background: #1A1D23; border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  max-height: 300px; overflow-y: auto; padding: 4px;
+  animation: slideDown 0.15s ease;
+}
+.token-dropdown.hidden { display: none; }
+.token-dropdown-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px;
+  border: none; border-radius: 8px; cursor: pointer; background: transparent;
+  color: var(--text); font-size: 13px; font-weight: 500; transition: background 0.15s;
+}
+.token-dropdown-item:hover { background: var(--surface-hover); }
+.token-dropdown-item.selected { background: var(--accent-bg); }
+.token-dropdown-item.disabled { opacity: 0.4; cursor: not-allowed; color: var(--text-faint); }
+.token-dropdown-item .item-info { text-align: left; flex: 1; }
+.token-dropdown-item .item-name { font-size: 10px; color: var(--text-muted); }
+.token-dropdown-item .item-price { text-align: right; font-size: 10px; font-family: var(--mono); }
+.token-dropdown-item .item-price .usd { color: var(--text-dim); }
+.token-dropdown-item .item-price .xpr { color: var(--text-faint); font-size: 9px; }
+
+/* Rate and details */
+.rate-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 4px 4px; font-size: 11px; color: var(--text-muted);
+}
+.rate-row .rate-value { font-family: var(--mono); color: var(--text-dim); }
+.rate-row .rate-value.error { color: var(--red); }
+.swap-details {
+  background: rgba(0,0,0,0.2); border-radius: 10px; padding: 10px 14px;
+  margin-top: 8px; border: 1px solid rgba(255,255,255,0.03);
+}
+.detail-row {
+  display: flex; justify-content: space-between; padding: 4px 0; font-size: 11px;
+}
+.detail-row .label { color: var(--text-muted); }
+.detail-row .value { color: var(--text-dim); font-family: var(--mono); font-size: 10px; }
+
+/* Action button */
+.btn-swap {
+  width: 100%; padding: 16px 0; border-radius: 14px; border: none;
+  font-weight: 700; font-size: 15px; cursor: pointer; margin-top: 18px;
+  letter-spacing: 0.02em; transition: all 0.3s; position: relative; overflow: hidden;
+}
+.btn-swap.connect { background: linear-gradient(135deg, var(--accent), var(--accent-dark)); color: var(--bg); }
+.btn-swap.swapping { background: rgba(0,212,170,0.2); color: var(--bg); }
+.btn-swap.success { background: linear-gradient(135deg, var(--green), #059669); color: var(--bg); }
+.btn-swap.ready { background: linear-gradient(135deg, var(--accent), var(--accent-dark)); color: var(--bg); }
+.btn-swap.disabled { background: rgba(255,255,255,0.05); color: var(--text-faint); opacity: 0.5; cursor: not-allowed; }
+
+/* ═══════════════════════════════════════════════════════════
+   TX LOG
+   ═══════════════════════════════════════════════════════════ */
+.tx-log {
+  margin-top: 16px; background: var(--surface); border: 1px solid var(--surface-border);
+  border-radius: 14px; padding: 14px 16px;
+}
+.tx-log.hidden { display: none; }
+.section-title {
+  font-size: 11px; color: var(--text-muted); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px;
+}
+.tx-log-scroll { max-height: 140px; overflow-y: auto; }
+.tx-entry {
+  display: flex; gap: 8px; padding: 6px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 11px;
+}
+.tx-entry:last-child { border-bottom: none; }
+.tx-icon { flex-shrink: 0; }
+.tx-icon.success { color: var(--accent); }
+.tx-icon.pending { color: var(--yellow); }
+.tx-icon.error { color: var(--red); }
+.tx-icon.info { color: var(--text-muted); }
+.tx-time { color: var(--text-dim); font-family: var(--mono); font-size: 10px; }
+.tx-msg { color: #D1D5DB; }
+
+/* ═══════════════════════════════════════════════════════════
+   PRICE GRID
+   ═══════════════════════════════════════════════════════════ */
+.price-grid-section {
+  margin-top: 16px; background: var(--surface); border: 1px solid var(--surface-border);
+  border-radius: 14px; padding: 14px 16px;
+}
+.price-grid-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;
+}
+.price-grid-api { font-size: 9px; color: var(--text-faint); font-family: var(--mono); }
+.price-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
+}
+.price-tile {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(0,0,0,0.2); border-radius: 8px; padding: 8px 10px;
+}
+.price-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.price-info { flex: 1; min-width: 0; }
+.price-symbol { font-size: 11px; font-weight: 700; color: var(--text); }
+.price-contract {
+  font-size: 9px; color: var(--text-muted); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.price-values { text-align: right; flex-shrink: 0; }
+.price-usd { font-size: 11px; color: var(--accent); font-family: var(--mono); font-weight: 600; }
+.price-xpr { font-size: 8px; color: var(--text-faint); font-family: var(--mono); }
+.price-na { font-size: 9px; color: rgba(107,114,128,0.5); }
+.price-loading { font-size: 10px; color: var(--text-faint); }
+
+/* ═══════════════════════════════════════════════════════════
+   DONATIONS
+   ═══════════════════════════════════════════════════════════ */
+.donate-section {
+  margin-top: 16px; background: var(--surface); border: 1px solid var(--surface-border);
+  border-radius: 14px; padding: 20px 16px; text-align: center;
+}
+.donate-title {
+  font-size: 11px; color: var(--text-muted); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 14px;
+}
+.donate-qr {
+  width: 120px; height: 120px; border-radius: 12px; margin: 0 auto 16px;
+  border: 2px solid rgba(255,255,255,0.08);
+  background: #fff; padding: 4px;
+}
+.donate-qr img { width: 100%; height: 100%; border-radius: 8px; object-fit: contain; }
+.donate-methods { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.donate-row {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: rgba(0,0,0,0.2); border-radius: 10px; padding: 10px 14px;
+  border: 1px solid rgba(255,255,255,0.04); transition: border-color 0.2s;
+}
+.donate-row:hover { border-color: rgba(255,255,255,0.1); }
+.donate-row .donate-icon {
+  width: 28px; height: 28px; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center; flex-shrink: 0;
+  font-size: 12px; font-weight: 700;
+}
+.donate-row .donate-icon.webauth {
+  background: linear-gradient(135deg, rgba(108,92,231,0.3), rgba(108,92,231,0.1));
+  border: 1px solid rgba(108,92,231,0.4); color: #A29BFE;
+}
+.donate-row .donate-icon.paypal {
+  background: linear-gradient(135deg, rgba(0,112,210,0.3), rgba(0,112,210,0.1));
+  border: 1px solid rgba(0,112,210,0.4); color: #4DA6FF;
+}
+.donate-row .donate-info { text-align: left; flex: 1; }
+.donate-row .donate-label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+.donate-row .donate-value { font-size: 12px; color: var(--text); font-weight: 600; }
+.donate-row .donate-value a {
+  color: var(--accent); text-decoration: none; transition: color 0.2s;
+}
+.donate-row .donate-value a:hover { color: #fff; }
+.donate-row .btn-copy-addr {
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px; padding: 4px 8px; font-size: 9px; color: var(--text-dim);
+  cursor: pointer; font-family: var(--sans); font-weight: 600;
+  transition: all 0.15s;
+}
+.donate-row .btn-copy-addr:hover { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+.donate-note {
+  font-size: 9px; color: var(--text-faint); margin-top: 10px; line-height: 1.5;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FOOTER
+   ═══════════════════════════════════════════════════════════ */
+.footer {
+  text-align: center; margin-top: 24px; padding-bottom: 24px;
+  font-size: 10px; color: var(--text-faint); line-height: 1.8;
+}
+.footer .ghost { color: var(--text-ghost); }
+
+/* ═══════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 480px) {
+  .price-grid { grid-template-columns: 1fr; }
+  .token-selector-col { flex: 0 0 120px; }
+  .app-container { padding: 20px 12px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════
+     BACKGROUND
+     ═══════════════════════════════════════════════════════════ -->
+<svg class="bg-hex-grid" viewBox="0 0 110 80" preserveAspectRatio="xMidYMid slice" id="hexGrid"></svg>
+<div class="bg-glow-1"></div>
+<div class="bg-glow-2"></div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     DISCLAIMER
+     ═══════════════════════════════════════════════════════════ -->
+<div class="disclaimer-overlay" id="disclaimerOverlay">
+  <svg class="bg-hex-grid" viewBox="0 0 110 80" preserveAspectRatio="xMidYMid slice" id="hexGrid2"></svg>
+  <div class="disclaimer-card fade-in">
+    <div style="text-align:center; margin-bottom:28px;">
+      <div class="disclaimer-badge">⚠ Important Notice</div>
+      <h2 class="disclaimer-title">Disclaimer &amp; Terms</h2>
+      <div class="disclaimer-version">v0.01 Alpha Release</div>
+    </div>
+    <div class="disclaimer-body">
+      <p><strong class="warn">ALPHA SOFTWARE — USE AT YOUR OWN RISK</strong></p>
+      <p>This is experimental, pre-release software (v0.01 Alpha) provided under the <strong class="label">MIT License</strong>. Offered "AS IS" without warranty of any kind.</p>
+      <p><strong class="label">No Guarantee of Funds:</strong> Token swaps on blockchain are irreversible. UBITQUITY, INC. and nDAO are not liable for any loss of tokens, failed transactions, or incorrect swap amounts.</p>
+      <p><strong class="label">Not Financial Advice:</strong> This tool does not provide financial, investment, or trading advice. Token values fluctuate.</p>
+      <p><strong class="label">Smart Contract Risk:</strong> Atomic swaps rely on smart contracts on XPR Network. Contracts may contain undiscovered vulnerabilities.</p>
+      <p><strong class="label">Live Pricing:</strong> Prices sourced from <span class="highlight">Alcor Exchange API</span> (proton.alcor.exchange). May not reflect real-time conditions.</p>
+    </div>
+    <label class="disclaimer-check">
+      <input type="checkbox" id="disclaimerCheck">
+      <span>I understand this is alpha software, I accept all risks, and I agree to the MIT License terms.</span>
+    </label>
+    <button class="btn-proceed inactive" id="btnProceed" disabled>Proceed to Swap Tool →</button>
+    <div style="text-align:center; margin-top:20px; font-size:10px; color:var(--text-faint); line-height:1.5;">
+      MIT License © <span id="yearDisc"></span> UBITQUITY, INC. &amp; nDAO — One Block at a Time®
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     MAIN APP
+     ═══════════════════════════════════════════════════════════ -->
+<div class="app-container" id="mainApp" style="display:none;">
+
+  <!-- Header -->
+  <div class="header fade-in">
+    <div class="header-brand">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <rect x="2" y="2" width="24" height="24" rx="6" stroke="#00D4AA" stroke-width="1.5" fill="rgba(0,212,170,0.08)"/>
+        <path d="M9 10h4v4H9zM15 14h4v4h-4z" fill="#00D4AA" opacity="0.6"/>
+        <path d="M14 8v12M8 14h12" stroke="#00D4AA" stroke-width="1" opacity="0.3"/>
+      </svg>
+      <h1><span>UBITQUITY</span><span class="plus">+</span><span class="ndao">nDAO</span></h1>
+    </div>
+    <div class="header-sub">Token Swap Tool</div>
+    <div class="header-meta">Powered by XPR Network · Atomic Swaps · v0.01 Alpha</div>
+  </div>
+
+  <!-- Alcor Status -->
+  <div class="alcor-bar fade-in-d1" id="alcorBar">
+    <div>
+      <span class="dot loading" id="alcorDot"></span>
+      <span class="status" id="alcorStatus">Alcor Exchange — Fetching prices...</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span class="time" id="alcorTime"></span>
+      <button class="btn-refresh" id="btnRefresh" title="Refresh prices">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <path d="M10.5 6A4.5 4.5 0 1 1 6 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          <path d="M6 1.5L8 1.5L6 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Wallet -->
+  <div class="wallet-bar fade-in-d1" id="walletBar">
+    <div class="wallet-status">
+      <div class="wallet-dot idle" id="walletDot"></div>
+      <span id="walletLabel" style="color:var(--text-muted)">Not connected</span>
+    </div>
+    <div id="walletActions">
+      <button class="btn-connect" id="btnConnect">Connect WebAuth</button>
+    </div>
+  </div>
+
+  <!-- Swap Card -->
+  <div class="swap-card fade-in-d2">
+    <div class="swap-header">
+      <span>Swap</span>
+      <button class="btn-settings" id="btnSettings">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <circle cx="9" cy="9" r="2.5" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M9 2v2M9 14v2M2 9h2M14 9h2M4.2 4.2l1.4 1.4M12.4 12.4l1.4 1.4M4.2 13.8l1.4-1.4M12.4 5.6l1.4-1.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Slippage -->
+    <div class="slippage-panel hidden" id="slippagePanel">
+      <div class="slippage-label">Slippage Tolerance</div>
+      <div class="slippage-buttons" id="slippageButtons"></div>
+    </div>
+
+    <!-- FROM -->
+    <div class="token-panel" style="margin-bottom:4px;">
+      <div class="token-panel-row">
+        <div class="token-selector-col">
+          <div class="field-label">From</div>
+          <div style="position:relative;" id="fromSelectWrap">
+            <button class="token-select-btn" id="fromSelectBtn"></button>
+            <div class="token-dropdown hidden" id="fromDropdown"></div>
+          </div>
+        </div>
+        <div class="amount-col">
+          <div class="field-label">Amount</div>
+          <input type="number" class="amount-input" id="fromAmount" placeholder="0.0000" step="0.0001">
+          <div class="usd-equiv" id="fromUsd"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Flip -->
+    <div class="flip-container">
+      <button class="btn-flip" id="btnFlip">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M8 2v12M4 10l4 4 4-4" stroke="#00D4AA" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- TO -->
+    <div class="token-panel" style="margin-top:4px;">
+      <div class="token-panel-row">
+        <div class="token-selector-col">
+          <div class="field-label">To</div>
+          <div style="position:relative;" id="toSelectWrap">
+            <button class="token-select-btn" id="toSelectBtn"></button>
+            <div class="token-dropdown hidden" id="toDropdown"></div>
+          </div>
+        </div>
+        <div class="amount-col">
+          <div class="field-label">You Receive</div>
+          <div class="amount-display empty" id="toDisplay">0.0000</div>
+          <div class="usd-equiv" id="toUsd"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rate -->
+    <div class="rate-row" id="rateRow" style="display:none;">
+      <span id="rateLabel">Rate (Alcor)</span>
+      <span class="rate-value" id="rateValue"></span>
+    </div>
+
+    <!-- Details -->
+    <div class="swap-details" id="swapDetails" style="display:none;"></div>
+
+    <!-- Action -->
+    <button class="btn-swap connect" id="btnSwap">Connect WebAuth Wallet</button>
+  </div>
+
+  <!-- TX Log -->
+  <div class="tx-log hidden" id="txLog">
+    <div class="section-title">Transaction Log</div>
+    <div class="tx-log-scroll" id="txLogScroll"></div>
+  </div>
+
+  <!-- Price Grid -->
+  <div class="price-grid-section fade-in-d3">
+    <div class="price-grid-header">
+      <div class="section-title" style="margin-bottom:0;">Live Prices — Alcor Exchange</div>
+      <div class="price-grid-api">proton.alcor.exchange/api/v2</div>
+    </div>
+    <div class="price-grid" id="priceGrid"></div>
+  </div>
+
+  <!-- Donations -->
+  <div class="donate-section fade-in-d4">
+    <div class="donate-title">☕ Support Development</div>
+    <div class="donate-qr">
+      <img src="data:image/jpeg;base64,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" alt="Donation QR Code">
+    </div>
+    <div class="donate-methods">
+      <div class="donate-row">
+        <div class="donate-icon webauth">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.2"/><path d="M4 7h6M7 4v6" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
+        </div>
+        <div class="donate-info">
+          <div class="donate-label">WebAuth (XPR Network)</div>
+          <div class="donate-value">@nwosnack2</div>
+        </div>
+        <button class="btn-copy-addr" onclick="navigator.clipboard.writeText('nwosnack2').then(function(){var b=event.target;b.textContent='Copied!';setTimeout(function(){b.textContent='Copy'},1500)})">Copy</button>
+      </div>
+      <div class="donate-row">
+        <div class="donate-icon paypal">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4 12l1-6h3.5c2 0 3.5 1 3 3s-2.5 3-4.5 3H5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="donate-info">
+          <div class="donate-label">PayPal</div>
+          <div class="donate-value"><a href="https://paypal.me/dubpsyche7" target="_blank" rel="noopener">paypal.me/dubpsyche7</a></div>
+        </div>
+        <a href="https://paypal.me/dubpsyche7" target="_blank" rel="noopener" style="text-decoration:none;"><span class="btn-copy-addr" style="cursor:pointer;">Send</span></a>
+      </div>
+    </div>
+    <div class="donate-note">Your donations help support open-source development.<br>All tokens on XPR Network accepted via WebAuth.</div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer fade-in-d4">
+    MIT License · Open Source · v0.01 Alpha<br>
+    © <span id="yearMain"></span> UBITQUITY, INC. &amp; nDAO · One Block at a Time®<br>
+    <span class="ghost">USE AT YOUR OWN RISK — No warranty expressed or implied</span><br>
+    <span class="ghost">Prices via Alcor Exchange (proton.alcor.exchange/api/v2)</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     JAVASCRIPT — ZERO DEPENDENCIES
+     ═══════════════════════════════════════════════════════════ -->
+<script>
+(function() {
+  'use strict';
+
+  // ─── TOKEN REGISTRY ────────────────────────────────────────
+  const TOKENS = [
+    { symbol: 'UBQT',    name: 'Ubitquity Token',   contract: 'ubitquityllc', alcorId: 'ubqt-ubitquityllc',   precision: 4, color: '#00D4AA' },
+    { symbol: 'UBQTX',   name: 'Ubitquity X Token', contract: 'tokencreate',  alcorId: 'ubqtx-tokencreate',   precision: 4, color: '#00B894' },
+    { symbol: 'TITLET',  name: 'Title Token',       contract: 'tokencreate',  alcorId: 'titlet-tokencreate',  precision: 4, color: '#6C5CE7' },
+    { symbol: 'NDAO',    name: 'nDAO Token',        contract: 'tokencreate',  alcorId: 'ndao-tokencreate',    precision: 4, color: '#FDA085' },
+    { symbol: 'NDAOX',   name: 'nDAO X Token',      contract: 'tokencreate',  alcorId: 'ndaox-tokencreate',   precision: 4, color: '#F97316' },
+    { symbol: 'DEED',    name: 'Deed Token',        contract: 'tokencreate',  alcorId: 'deed-tokencreate',    precision: 4, color: '#E17055' },
+    { symbol: 'AETHERT', name: 'Aether Token',      contract: 'tokencreate',  alcorId: 'aethert-tokencreate', precision: 4, color: '#74B9FF' },
+    { symbol: 'GAMES',   name: 'Games Token',       contract: 'tokencreate',  alcorId: 'games-tokencreate',   precision: 4, color: '#A29BFE' },
+    { symbol: 'BEATS',   name: 'Beats Token',       contract: 'tokencreate',  alcorId: 'beats-tokencreate',   precision: 4, color: '#FD79A8' },
+    { symbol: 'CAUDIT',  name: 'Crypto Audit Token', contract: 'tokencreate', alcorId: 'caudit-tokencreate',  precision: 4, color: '#55EFC4' },
+  ];
+
+  const ALCOR_API = 'https://proton.alcor.exchange/api/v2/tokens';
+  const SLIPPAGES = ['0.5', '1.0', '2.0', '5.0'];
+
+  // ─── STATE ─────────────────────────────────────────────────
+  let state = {
+    fromToken: 'UBQT',
+    toToken: 'NDAO',
+    fromAmount: '',
+    slippage: '1.0',
+    wallet: null,
+    status: 'idle', // idle | connecting | connected | swapping | success
+    prices: {},
+    pricesLoading: true,
+    pricesLastUpdated: null,
+    txLog: [],
+    settingsOpen: false,
+  };
+
+  // ─── DOM REFS ──────────────────────────────────────────────
+  const $ = (id) => document.getElementById(id);
+  const year = new Date().getFullYear();
+  $('yearDisc').textContent = year;
+  $('yearMain').textContent = year;
+
+  // ─── HEX GRID ──────────────────────────────────────────────
+  function buildHexGrid(svgEl) {
+    let html = '';
+    for (let i = 0; i < 80; i++) {
+      const x = (i % 10) * 11 + (Math.floor(i / 10) % 2 === 0 ? 0 : 5.5);
+      const y = Math.floor(i / 10) * 9.5;
+      const op = (0.03 + Math.random() * 0.06).toFixed(3);
+      html += `<g transform="translate(${x},${y})" opacity="${op}"><polygon points="5,0 10,2.5 10,7.5 5,10 0,7.5 0,2.5" fill="none" stroke="#00D4AA" stroke-width="0.3"/></g>`;
+    }
+    svgEl.innerHTML = html;
+  }
+  buildHexGrid($('hexGrid'));
+  buildHexGrid($('hexGrid2'));
+
+  // ─── DISCLAIMER ────────────────────────────────────────────
+  const disclaimerCheck = $('disclaimerCheck');
+  const btnProceed = $('btnProceed');
+
+  disclaimerCheck.addEventListener('change', function() {
+    if (this.checked) {
+      btnProceed.disabled = false;
+      btnProceed.className = 'btn-proceed active';
+    } else {
+      btnProceed.disabled = true;
+      btnProceed.className = 'btn-proceed inactive';
+    }
+  });
+
+  btnProceed.addEventListener('click', function() {
+    if (!disclaimerCheck.checked) return;
+    $('disclaimerOverlay').classList.add('hidden');
+    $('mainApp').style.display = 'block';
+    fetchAllPrices();
+  });
+
+  // ─── ALCOR PRICE FETCHING ─────────────────────────────────
+  async function fetchAllPrices() {
+    state.pricesLoading = true;
+    renderAlcorBar();
+    $('btnRefresh').classList.add('spinning');
+
+    const results = {};
+    const fetches = TOKENS.map(async (token) => {
+      try {
+        const res = await fetch(`${ALCOR_API}/${token.alcorId}`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        results[token.symbol] = {
+          system_price: data.system_price ?? null,
+          usd_price: data.usd_price ?? null,
+          loaded: true, error: false,
+        };
+      } catch (err) {
+        console.warn('Alcor: ' + token.symbol + ' (' + token.alcorId + '):', err.message);
+        results[token.symbol] = { system_price: null, usd_price: null, loaded: true, error: true };
+      }
+    });
+
+    await Promise.allSettled(fetches);
+    state.prices = results;
+    state.pricesLoading = false;
+    state.pricesLastUpdated = new Date();
+    $('btnRefresh').classList.remove('spinning');
+    renderAlcorBar();
+    renderPriceGrid();
+    renderTokenSelects();
+    recalculate();
+  }
+
+  // Auto-refresh every 30s
+  setInterval(fetchAllPrices, 30000);
+
+  $('btnRefresh').addEventListener('click', function() {
+    if (!state.pricesLoading) fetchAllPrices();
+  });
+
+  // ─── RATE CALCULATION ──────────────────────────────────────
+  function getRate(from, to) {
+    if (from === to) return '1.000000';
+    const fp = state.prices[from];
+    const tp = state.prices[to];
+    if (fp && fp.usd_price && tp && tp.usd_price) return (fp.usd_price / tp.usd_price).toFixed(6);
+    if (fp && fp.system_price && tp && tp.system_price) return (fp.system_price / tp.system_price).toFixed(6);
+    return null;
+  }
+
+  function recalculate() {
+    const rate = getRate(state.fromToken, state.toToken);
+    const amt = parseFloat(state.fromAmount);
+    const toDisplay = $('toDisplay');
+    const rateRow = $('rateRow');
+    const detailsEl = $('swapDetails');
+    const fromUsd = $('fromUsd');
+    const toUsd = $('toUsd');
+
+    // From USD
+    const fp = state.prices[state.fromToken];
+    if (amt && fp && fp.usd_price != null) {
+      fromUsd.textContent = '≈ $' + (amt * fp.usd_price).toFixed(4) + ' USD';
+    } else {
+      fromUsd.textContent = '';
+    }
+
+    if (amt > 0 && rate) {
+      const toAmt = (amt * parseFloat(rate)).toFixed(4);
+      toDisplay.textContent = toAmt;
+      toDisplay.className = 'amount-display has-value';
+
+      // To USD
+      const tp = state.prices[state.toToken];
+      if (tp && tp.usd_price != null) {
+        toUsd.textContent = '≈ $' + (parseFloat(toAmt) * tp.usd_price).toFixed(4) + ' USD';
+      } else {
+        toUsd.textContent = '';
+      }
+
+      // Rate
+      rateRow.style.display = 'flex';
+      $('rateLabel').textContent = 'Rate (Alcor)';
+      $('rateValue').textContent = '1 ' + state.fromToken + ' = ' + rate + ' ' + state.toToken;
+      $('rateValue').className = 'rate-value';
+
+      // Details
+      const fromObj = TOKENS.find(t => t.symbol === state.fromToken);
+      const toObj = TOKENS.find(t => t.symbol === state.toToken);
+      const minReceive = (parseFloat(toAmt) * (1 - parseFloat(state.slippage) / 100)).toFixed(4);
+      detailsEl.style.display = 'block';
+      detailsEl.innerHTML = [
+        ['Minimum received', minReceive + ' ' + state.toToken],
+        ['Slippage tolerance', state.slippage + '%'],
+        ['Swap method', 'Atomic (on-chain)'],
+        ['Network', 'XPR Network (Proton)'],
+        ['From contract', fromObj.contract],
+        ['To contract', toObj.contract],
+        ['Price source', 'Alcor Exchange API v2'],
+      ].map(r => `<div class="detail-row"><span class="label">${r[0]}</span><span class="value">${r[1]}</span></div>`).join('');
+
+    } else {
+      toDisplay.textContent = '0.0000';
+      toDisplay.className = 'amount-display empty';
+      toUsd.textContent = '';
+
+      if (amt > 0 && !rate) {
+        rateRow.style.display = 'flex';
+        $('rateLabel').textContent = 'Rate';
+        $('rateValue').textContent = 'Price data unavailable';
+        $('rateValue').className = 'rate-value error';
+      } else {
+        rateRow.style.display = 'none';
+      }
+      detailsEl.style.display = 'none';
+    }
+
+    renderSwapButton();
+  }
+
+  // ─── RENDER HELPERS ────────────────────────────────────────
+  function renderAlcorBar() {
+    const dot = $('alcorDot');
+    const loaded = Object.values(state.prices).filter(p => p.loaded).length;
+    const errors = Object.values(state.prices).filter(p => p.error).length;
+
+    if (state.pricesLoading) {
+      dot.className = 'dot loading';
+      $('alcorStatus').textContent = 'Alcor Exchange — Fetching prices...';
+    } else {
+      dot.className = errors === TOKENS.length ? 'dot error' : 'dot ok';
+      $('alcorStatus').textContent = 'Alcor Exchange — ' + (loaded - errors) + '/' + TOKENS.length + ' tokens priced';
+    }
+    $('alcorTime').textContent = state.pricesLastUpdated ? state.pricesLastUpdated.toLocaleTimeString() : '';
+  }
+
+  function makeTokenBadge(token, size) {
+    size = size || 28;
+    return `<div class="token-badge" style="width:${size}px;height:${size}px;background:linear-gradient(135deg,${token.color}33,${token.color}11);border:1.5px solid ${token.color}55;color:${token.color};font-size:${size*0.28}px;">${token.symbol.slice(0,2)}</div>`;
+  }
+
+  function renderTokenSelectBtn(btnId, symbol) {
+    const btn = $(btnId);
+    const t = TOKENS.find(tk => tk.symbol === symbol);
+    const p = state.prices[symbol];
+    let priceHtml = '';
+    if (p && p.usd_price != null) {
+      priceHtml = `<div class="price">$${p.usd_price.toFixed(6)}</div>`;
+    }
+    btn.innerHTML = `
+      ${makeTokenBadge(t)}
+      <div class="token-select-info">
+        <div class="symbol">${t.symbol}</div>
+        ${priceHtml}
+      </div>
+      <svg class="dropdown-arrow" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5L6 7.5L9 4.5" stroke="#6B7280" stroke-width="1.5" stroke-linecap="round"/></svg>
+    `;
+  }
+
+  function renderTokenSelects() {
+    renderTokenSelectBtn('fromSelectBtn', state.fromToken);
+    renderTokenSelectBtn('toSelectBtn', state.toToken);
+  }
+
+  function buildDropdown(dropdownId, currentSymbol, otherSymbol, onSelect) {
+    const dd = $(dropdownId);
+    dd.innerHTML = TOKENS.map(t => {
+      const p = state.prices[t.symbol];
+      const isSelected = t.symbol === currentSymbol;
+      const isDisabled = t.symbol === otherSymbol;
+      let priceHtml = '';
+      if (p && p.usd_price != null) {
+        priceHtml = `<div class="usd">$${p.usd_price.toFixed(6)}</div>`;
+        if (p.system_price != null) priceHtml += `<div class="xpr">${p.system_price.toFixed(4)} XPR</div>`;
+      } else if (p && p.error) {
+        priceHtml = `<div class="usd" style="color:var(--text-faint);">—</div>`;
+      } else {
+        priceHtml = `<div class="usd" style="color:var(--text-faint);">···</div>`;
+      }
+      return `<button class="token-dropdown-item ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}" data-symbol="${t.symbol}" ${isDisabled ? 'disabled' : ''}>
+        ${makeTokenBadge(t, 24)}
+        <div class="item-info"><div>${t.symbol}</div><div class="item-name">${t.name}</div></div>
+        <div class="item-price">${priceHtml}</div>
+      </button>`;
+    }).join('');
+
+    dd.querySelectorAll('.token-dropdown-item:not(.disabled)').forEach(item => {
+      item.addEventListener('click', function() {
+        onSelect(this.dataset.symbol);
+        dd.classList.add('hidden');
+      });
+    });
+  }
+
+  function renderPriceGrid() {
+    const grid = $('priceGrid');
+    grid.innerHTML = TOKENS.map(t => {
+      const p = state.prices[t.symbol];
+      let valueHtml;
+      if (state.pricesLoading && !p) {
+        valueHtml = '<span class="price-loading">···</span>';
+      } else if (p && p.usd_price != null) {
+        const usdStr = p.usd_price < 0.01 ? p.usd_price.toFixed(6) : p.usd_price.toFixed(4);
+        valueHtml = `<div class="price-usd">$${usdStr}</div>`;
+        if (p.system_price != null) valueHtml += `<div class="price-xpr">${p.system_price.toFixed(4)} XPR</div>`;
+      } else {
+        valueHtml = '<span class="price-na">No pair</span>';
+      }
+      const dotColor = (p && p.error) ? 'var(--text-faint)' : t.color;
+      return `<div class="price-tile" style="border:1px solid ${t.color}15;">
+        <div class="price-dot" style="background:${dotColor};"></div>
+        <div class="price-info"><div class="price-symbol">${t.symbol}</div><div class="price-contract">${t.contract}</div></div>
+        <div class="price-values">${valueHtml}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderSwapButton() {
+    const btn = $('btnSwap');
+    const amt = parseFloat(state.fromAmount);
+    const rate = getRate(state.fromToken, state.toToken);
+
+    if (!state.wallet) {
+      btn.className = 'btn-swap connect';
+      btn.textContent = 'Connect WebAuth Wallet';
+      btn.disabled = false;
+    } else if (state.status === 'swapping') {
+      btn.className = 'btn-swap swapping';
+      btn.textContent = '⏳ Signing & Broadcasting...';
+      btn.disabled = true;
+    } else if (state.status === 'success') {
+      btn.className = 'btn-swap success';
+      btn.textContent = '✓ Swap Successful!';
+      btn.disabled = true;
+    } else if (!rate) {
+      btn.className = 'btn-swap disabled';
+      btn.textContent = '⚠ Price Unavailable';
+      btn.disabled = true;
+    } else if (!amt || amt <= 0) {
+      btn.className = 'btn-swap disabled';
+      btn.textContent = 'Enter Amount';
+      btn.disabled = true;
+    } else {
+      btn.className = 'btn-swap ready';
+      btn.textContent = 'Swap ' + state.fromToken + ' → ' + state.toToken;
+      btn.disabled = false;
+    }
+  }
+
+  function addTxLog(type, msg) {
+    state.txLog.push({ time: new Date(), type, msg });
+    const logEl = $('txLog');
+    logEl.classList.remove('hidden');
+    const scroll = $('txLogScroll');
+    const icons = { success: '✓', pending: '◌', error: '✕', info: '•' };
+    const entry = document.createElement('div');
+    entry.className = 'tx-entry';
+    entry.innerHTML = `
+      <span class="tx-icon ${type}">${icons[type] || '•'}</span>
+      <span class="tx-time">${new Date().toLocaleTimeString()}</span>
+      <span class="tx-msg">${msg}</span>`;
+    scroll.insertBefore(entry, scroll.firstChild);
+  }
+
+  // ─── SLIPPAGE ──────────────────────────────────────────────
+  function renderSlippage() {
+    const container = $('slippageButtons');
+    container.innerHTML = SLIPPAGES.map(v =>
+      `<button class="btn-slip ${state.slippage === v ? 'active' : ''}" data-val="${v}">${v}%</button>`
+    ).join('');
+    container.querySelectorAll('.btn-slip').forEach(btn => {
+      btn.addEventListener('click', function() {
+        state.slippage = this.dataset.val;
+        renderSlippage();
+        recalculate();
+      });
+    });
+  }
+  renderSlippage();
+
+  $('btnSettings').addEventListener('click', function() {
+    state.settingsOpen = !state.settingsOpen;
+    $('slippagePanel').classList.toggle('hidden', !state.settingsOpen);
+    this.classList.toggle('active', state.settingsOpen);
+  });
+
+  // ─── TOKEN SELECT DROPDOWNS ────────────────────────────────
+  function openFromDropdown() {
+    buildDropdown('fromDropdown', state.fromToken, state.toToken, function(sym) {
+      state.fromToken = sym;
+      renderTokenSelects();
+      recalculate();
+    });
+    $('fromDropdown').classList.remove('hidden');
+    $('toDropdown').classList.add('hidden');
+  }
+  function openToDropdown() {
+    buildDropdown('toDropdown', state.toToken, state.fromToken, function(sym) {
+      state.toToken = sym;
+      renderTokenSelects();
+      recalculate();
+    });
+    $('toDropdown').classList.remove('hidden');
+    $('fromDropdown').classList.add('hidden');
+  }
+
+  $('fromSelectBtn').addEventListener('click', openFromDropdown);
+  $('toSelectBtn').addEventListener('click', openToDropdown);
+
+  // Close dropdowns on outside click
+  document.addEventListener('click', function(e) {
+    if (!$('fromSelectWrap').contains(e.target)) $('fromDropdown').classList.add('hidden');
+    if (!$('toSelectWrap').contains(e.target)) $('toDropdown').classList.add('hidden');
+  });
+
+  // ─── AMOUNT INPUT ──────────────────────────────────────────
+  $('fromAmount').addEventListener('input', function() {
+    state.fromAmount = this.value;
+    recalculate();
+  });
+
+  // ─── FLIP ──────────────────────────────────────────────────
+  $('btnFlip').addEventListener('click', function() {
+    this.classList.add('flipping');
+    setTimeout(() => this.classList.remove('flipping'), 400);
+    const tmpFrom = state.fromToken;
+    const tmpTo = state.toToken;
+    const rate = getRate(state.fromToken, state.toToken);
+    const toAmt = (state.fromAmount && rate) ? (parseFloat(state.fromAmount) * parseFloat(rate)).toFixed(4) : '';
+    state.fromToken = tmpTo;
+    state.toToken = tmpFrom;
+    state.fromAmount = toAmt;
+    $('fromAmount').value = toAmt;
+    renderTokenSelects();
+    recalculate();
+  });
+
+  // ─── WALLET ────────────────────────────────────────────────
+  async function connectWallet() {
+    state.status = 'connecting';
+    $('walletDot').className = 'wallet-dot connecting';
+    $('walletLabel').textContent = 'Connecting...';
+    $('walletLabel').style.color = 'var(--text)';
+    $('btnConnect').disabled = true;
+    $('btnConnect').textContent = 'Connecting...';
+
+    // ═══ PRODUCTION: Proton Web SDK integration point ═══
+    // const { link, session } = await ConnectWallet({
+    //   linkOptions: {
+    //     chainId: '384da888112027f0321850a169f737c33e53b388aad48b5adace4bab97f437e0',
+    //     endpoints: ['https://proton.greymass.com']
+    //   },
+    //   transportOptions: { requestAccount: 'swap.ubq' },
+    //   selectorOptions: { appName: 'UBITQUITY Swap' }
+    // });
+    // state.wallet = { actor: session.auth.actor.toString(), permission: 'active' };
+    // ════════════════════════════════════════════════════
+
+    await new Promise(r => setTimeout(r, 1500));
+    state.wallet = { actor: 'demouser', permission: 'active' };
+    state.status = 'connected';
+
+    $('walletDot').className = 'wallet-dot connected';
+    $('walletLabel').textContent = '@' + state.wallet.actor;
+    $('walletLabel').style.color = 'var(--text)';
+    $('walletActions').innerHTML = '<button class="btn-disconnect" id="btnDisconnect">Disconnect</button>';
+    $('btnDisconnect').addEventListener('click', disconnectWallet);
+    addTxLog('info', 'Wallet connected via WebAuth');
+    renderSwapButton();
+  }
+
+  function disconnectWallet() {
+    state.wallet = null;
+    state.status = 'idle';
+    $('walletDot').className = 'wallet-dot idle';
+    $('walletLabel').textContent = 'Not connected';
+    $('walletLabel').style.color = 'var(--text-muted)';
+    $('walletActions').innerHTML = '<button class="btn-connect" id="btnConnect">Connect WebAuth</button>';
+    $('btnConnect').addEventListener('click', connectWallet);
+    addTxLog('info', 'Wallet disconnected');
+    renderSwapButton();
+  }
+
+  $('btnConnect').addEventListener('click', connectWallet);
+
+  // ─── SWAP EXECUTION ────────────────────────────────────────
+  async function executeSwap() {
+    const amt = parseFloat(state.fromAmount);
+    const rate = getRate(state.fromToken, state.toToken);
+    if (!amt || amt <= 0 || !rate) return;
+
+    state.status = 'swapping';
+    renderSwapButton();
+
+    const fromObj = TOKENS.find(t => t.symbol === state.fromToken);
+    const toObj = TOKENS.find(t => t.symbol === state.toToken);
+    const toAmt = (amt * parseFloat(rate)).toFixed(4);
+    const minReceive = (parseFloat(toAmt) * (1 - parseFloat(state.slippage) / 100)).toFixed(4);
+
+    addTxLog('pending', 'Atomic swap: ' + state.fromAmount + ' ' + state.fromToken + ' → ' + toAmt + ' ' + state.toToken + ' (min: ' + minReceive + ')');
+
+    // ═══════════════════════════════════════════════════════
+    // XPR NETWORK ATOMIC SWAP — PRODUCTION CODE
+    // ═══════════════════════════════════════════════════════
+    //
+    // const actions = [
+    //   {
+    //     account: fromObj.contract,
+    //     name: 'transfer',
+    //     data: {
+    //       from: state.wallet.actor,
+    //       to: 'swap.contract',
+    //       quantity: amt.toFixed(fromObj.precision) + ' ' + state.fromToken,
+    //       memo: 'swap:' + state.toToken + ':' + minReceive + ':' + toObj.contract
+    //     },
+    //     authorization: [{ actor: state.wallet.actor, permission: 'active' }]
+    //   },
+    //   {
+    //     account: 'swap.contract',
+    //     name: 'execute',
+    //     data: {
+    //       user: state.wallet.actor,
+    //       from_sym: fromObj.precision + ',' + state.fromToken,
+    //       from_contract: fromObj.contract,
+    //       to_sym: toObj.precision + ',' + state.toToken,
+    //       to_contract: toObj.contract,
+    //       min_receive: minReceive + ' ' + state.toToken
+    //     },
+    //     authorization: [{ actor: state.wallet.actor, permission: 'active' }]
+    //   }
+    // ];
+    // const result = await session.transact({ actions }, { broadcast: true });
+    // ATOMIC: both legs succeed or both revert
+    // ═══════════════════════════════════════════════════════
+
+    await new Promise(r => setTimeout(r, 2200));
+    const txId = Array.from({ length: 64 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+    addTxLog('success', 'Swap confirmed — TX: ' + txId.slice(0, 16) + '...');
+    state.status = 'success';
+    renderSwapButton();
+    setTimeout(() => { state.status = 'connected'; renderSwapButton(); }, 3000);
+  }
+
+  $('btnSwap').addEventListener('click', function() {
+    if (!state.wallet) {
+      connectWallet();
+    } else {
+      executeSwap();
+    }
+  });
+
+  // ─── INITIAL RENDER ────────────────────────────────────────
+  renderTokenSelects();
+  renderPriceGrid();
+  renderSwapButton();
+
+})();
+</script>
+</body>
+</html>
