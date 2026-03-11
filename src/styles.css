@@ -1,0 +1,44 @@
+/* ═══════════════════════════════════════════════════════════
+   CSS VARIABLES & RESET
+   ═══════════════════════════════════════════════════════════ */
+:root {
+  --bg: #0D0F13;
+  --surface: rgba(255,255,255,0.02);
+  --surface-border: rgba(255,255,255,0.06);
+  --input-bg: rgba(255,255,255,0.03);
+  --input-border: rgba(255,255,255,0.08);
+  --text: #E5E7EB;
+  --text-dim: #9CA3AF;
+  --text-muted: #6B7280;
+  --text-faint: #4B5563;
+  --accent: #00D4AA;
+  --accent-dark: #00B894;
+  --accent-glow: rgba(0,212,170,0.5);
+  --mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  --sans: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+button { font-family: var(--sans); }
+
+/* ═══════════════════════════════════════════════════════════
+   ANIMATIONS
+   ═══════════════════════════════════════════════════════════ */
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
